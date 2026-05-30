@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'; @Entity('job_certificates_req') export class JobCertificateReq { @PrimaryGeneratedColumn('uuid') id: string; @Column() job_id: string; @Column() cert_name: string; @Column({ default: false }) is_mandatory: boolean; }

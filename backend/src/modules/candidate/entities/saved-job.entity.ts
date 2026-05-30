@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'; @Entity('saved_jobs') export class SavedJob { @PrimaryGeneratedColumn('uuid') id: string; @Column() candidate_id: string; @Column() job_id: string; @Column({ default: () => 'now()' }) created_at: Date; }

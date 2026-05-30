@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'; @Entity('job_categories') export class JobCategory { @PrimaryGeneratedColumn('uuid') id: string; @Column() name: string; @Column({ nullable: true }) description: string; @Column() company_id: string; }

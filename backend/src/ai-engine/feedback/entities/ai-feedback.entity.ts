@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'; @Entity('ai_feedbacks') export class AiFeedback { @PrimaryGeneratedColumn('uuid') id: string; @Column({ type: 'int' }) rating: number; @Column({ type: 'text', nullable: true }) comment: string; }

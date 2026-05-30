@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'; @Entity('job_education_req') export class JobEducationReq { @PrimaryGeneratedColumn('uuid') id: string; @Column() job_id: string; @Column() required_degree: string; @Column({ nullable: true }) preferred_major: string; }

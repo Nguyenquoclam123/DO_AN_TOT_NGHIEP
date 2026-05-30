@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm'; @Entity('talent_pool') export class TalentPool { @PrimaryGeneratedColumn('uuid') id: string; @Column() companyId: string; @Column() candidateId: string; @CreateDateColumn() createdAt: Date; }

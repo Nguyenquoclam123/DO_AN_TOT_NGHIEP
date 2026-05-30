@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'; @Entity('subscriptions') export class Subscription { @PrimaryGeneratedColumn('uuid') id: string; @Column() company_id: string; @Column() plan_name: string; @Column() start_date: Date; @Column() end_date: Date; @Column() max_job_post: number; @Column() max_ai_scan: number; }

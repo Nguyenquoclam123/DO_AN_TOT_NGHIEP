@@ -1,0 +1,1 @@
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'; @Entity('company_galleries') export class CompanyGallery { @PrimaryGeneratedColumn('uuid') id: string; @Column() company_id: string; @Column() image_url: string; @Column({ nullable: true }) description: string; }
