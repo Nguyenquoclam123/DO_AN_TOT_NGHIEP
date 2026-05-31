@@ -15,6 +15,7 @@ import { NotificationService } from '../notification/notification.service';
 import { Candidate } from '../candidate/entities/candidate.entity';
 import { JobCategory } from './entities/job-category.entity';
 import { CandidateCv } from '../cv/entities/candidate-cv.entity';
+import { Company } from '../company/entities/company.entity';
 
 @Injectable()
 export class JobService {
@@ -64,6 +65,14 @@ export class JobService {
                 }
             }
 
+            // Validate Company and check approval status
+            const company = await queryRunner.manager.findOne(Company, {
+                where: { id: user.companyId }
+            });
+            if (!company) {
+                throw new BadRequestException('Không tìm thấy thông tin công ty tương ứng.');
+            }
+
             // 1. Map DTO Snake Case to Entity Camel Case
             const jobData: any = {
                 title: createJobDto.title,
@@ -85,6 +94,7 @@ export class JobService {
                 certificates: createJobDto.certificates,
                 expiredAt: createJobDto.expired_at ? new Date(createJobDto.expired_at) : null,
                 campaigns: linkedCampaigns,
+                status: company.status === 'APPROVED' ? (createJobDto.status || 'ACTIVE') : 'DRAFT',
             };
 
             // 0. Handle Category Resolution
@@ -183,15 +193,16 @@ export class JobService {
             qb.andWhere('job.companyId = :companyId', { companyId: query.companyId });
         }
 
-        // 2. Hide closed jobs and jobs from closed campaigns for candidates and public
+        // 2. Hide closed/draft jobs and jobs of unapproved companies for candidates and public
         if (!user || user.role === 'CANDIDATE') {
-            qb.andWhere('job.status != :closedStatus', { closedStatus: 'CLOSED' });
+            qb.andWhere('job.status = :activeStatus', { activeStatus: 'ACTIVE' });
+            qb.andWhere('company.status = :approvedCompanyStatus', { approvedCompanyStatus: 'APPROVED' });
             
             // Show jobs that either have NO campaign or belong to at least one ACTIVE campaign that has started
             const now = new Date();
             qb.leftJoin('job.campaigns', 'activeCampaign')
-              .andWhere('(activeCampaign.id IS NULL OR (activeCampaign.status = :activeStatus AND (activeCampaign.startDate IS NULL OR activeCampaign.startDate <= :now)))', 
-                { activeStatus: 'ACTIVE', now });
+              .andWhere('(activeCampaign.id IS NULL OR (activeCampaign.status = :activeCampaignStatus AND (activeCampaign.startDate IS NULL OR activeCampaign.startDate <= :now)))', 
+                { activeCampaignStatus: 'ACTIVE', now });
         }
 
         // 2. Exclude applied jobs for the current user
@@ -363,7 +374,17 @@ export class JobService {
         if (updateJobDto.minEducation) job.minEducation = updateJobDto.minEducation;
         if (updateJobDto.certificates) job.certificates = updateJobDto.certificates;
         if (updateJobDto.expired_at) job.expiredAt = new Date(updateJobDto.expired_at);
-        if (updateJobDto.status) job.status = updateJobDto.status;
+        if (updateJobDto.status) {
+            if (updateJobDto.status === 'ACTIVE') {
+                const company = await this.dataSource.getRepository(Company).findOne({
+                    where: { id: job.companyId }
+                });
+                if (!company || company.status !== 'APPROVED') {
+                    throw new BadRequestException('Tài khoản doanh nghiệp chưa được duyệt. Không thể đăng công khai tin tuyển dụng.');
+                }
+            }
+            job.status = updateJobDto.status;
+        }
 
         // 4. Handle Campaigns Relation
         if (updateJobDto.campaign_ids && Array.isArray(updateJobDto.campaign_ids)) {

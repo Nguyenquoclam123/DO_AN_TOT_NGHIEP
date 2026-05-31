@@ -6,6 +6,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums/role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 
 @ApiTags('Campaigns')
 @ApiBearerAuth()
@@ -34,9 +35,10 @@ export class CampaignController {
     }
 
     @Get('company/:companyId')
+    @UseGuards(OptionalJwtAuthGuard)
     @ApiOperation({ summary: 'List all campaigns by company ID' })
-    findAllByCompany(@Param('companyId', ParseUUIDPipe) companyId: string) {
-        return this.campaignService.findAllByCompany(companyId);
+    findAllByCompany(@Param('companyId', ParseUUIDPipe) companyId: string, @CurrentUser() user: any) {
+        return this.campaignService.findAllByCompany(companyId, user);
     }
 
     @Get(':id')

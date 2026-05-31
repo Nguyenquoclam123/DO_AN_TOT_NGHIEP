@@ -4,8 +4,8 @@ import { UserService } from '../user/user.service';
 import { CompanyService } from '../company/company.service';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
-
 import { QuestionBankService } from '../question-bank/question-bank.service';
+import { MailerService } from '../notification/mailer.service';
 
 @Injectable()
 export class AuthService {
@@ -14,6 +14,7 @@ export class AuthService {
         private readonly companyService: CompanyService,
         private readonly questionBankService: QuestionBankService,
         private readonly jwtService: JwtService,
+        private readonly mailerService: MailerService,
     ) { }
 
     async login(loginDto: LoginDto) {
@@ -96,6 +97,14 @@ export class AuthService {
                 representative: `${registerDto.firstName} ${registerDto.lastName}`.trim()
             });
             companyId = newCompany.id;
+
+            // Gửi email thông báo đăng ký doanh nghiệp thành công
+            const representativeName = `${registerDto.firstName} ${registerDto.lastName}`.trim();
+            this.mailerService.sendCompanyRegisteredEmail(
+                registerDto.companyName,
+                registerDto.email,
+                representativeName
+            ).catch(err => console.error('Failed to send company registration email:', err));
         }
 
         const user = await this.userService.create({

@@ -13,7 +13,7 @@ export class SettingService implements OnModuleInit {
     async onModuleInit() {
         // Initialize default settings if they don't exist
         const defaults = [
-            { key: 'ai_model', value: 'gemini-1.5-pro', description: 'Active AI model for analysis' },
+            { key: 'ai_model', value: 'gemini-2.5-flash', description: 'Active AI model for analysis' },
             { key: 'ai_temperature', value: '0.3', description: 'Creativity level of AI' },
             { key: 'ai_system_prompt', value: 'You are Nexus Talent AI, a high-performance recruitment orchestration agent.', description: 'Global AI instructions' }
         ];

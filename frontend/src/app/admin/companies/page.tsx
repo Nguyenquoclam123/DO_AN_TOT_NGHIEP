@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
     Search,
     Building2,
@@ -15,6 +16,7 @@ import {
 import { api } from "@/lib/api";
 
 export default function AdminCompaniesPage() {
+    const router = useRouter();
     const [companies, setCompanies] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -113,7 +115,12 @@ export default function AdminCompaniesPage() {
                                             </span>
                                         </td>
                                         <td style={{ padding: '20px 24px', textAlign: 'right' }}>
-                                            <button style={{ padding: '8px 16px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 700, color: '#475569', cursor: 'pointer' }}>Manage</button>
+                                            <button 
+                                                onClick={() => router.push(`/admin/companies/${company.id}`)}
+                                                style={{ padding: '8px 16px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 700, color: '#475569', cursor: 'pointer' }}
+                                            >
+                                                Manage
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}

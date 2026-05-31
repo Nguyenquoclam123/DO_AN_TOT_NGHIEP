@@ -71,10 +71,10 @@ export class CvService {
                     queryRunner.manager.create(CvExperience, {
                         ...exp,
                         cvId: savedCv.id,
-                        companyName: exp.company_name, // Map snake_case from AI to camelCase
-                        isCurrent: exp.is_current,
-                        startDate: exp.start_date,
-                        endDate: exp.end_date
+                        companyName: exp.company_name || exp.companyName, // Map snake_case from AI to camelCase
+                        isCurrent: exp.is_current || exp.isCurrent || false,
+                        startDate: exp.start_date || exp.startDate || null,
+                        endDate: exp.end_date || exp.endDate || null
                     })
                 );
                 await queryRunner.manager.save(exps);
@@ -85,9 +85,9 @@ export class CvService {
                     queryRunner.manager.create(CvEducation, {
                         ...edu,
                         cvId: savedCv.id,
-                        schoolName: edu.school_name,
-                        startDate: edu.start_date,
-                        endDate: edu.end_date
+                        schoolName: edu.school_name || edu.schoolName,
+                        startDate: edu.start_date || edu.startDate || null,
+                        endDate: edu.end_date || edu.endDate || null
                     })
                 );
                 await queryRunner.manager.save(edus);
@@ -122,11 +122,11 @@ export class CvService {
                     queryRunner.manager.create(CvCertification, {
                         cvId: savedCv.id,
                         name: cert.name,
-                        organization: cert.organization,
-                        issueDate: cert.issue_date || cert.issueDate,
-                        expiryDate: cert.expiry_date || cert.expiryDate,
-                        credentialId: cert.credential_id || cert.credentialId,
-                        credentialUrl: cert.credential_url || cert.credentialUrl
+                        organization: cert.organization || null,
+                        issueDate: cert.issue_date || cert.issueDate || null,
+                        expiryDate: cert.expiry_date || cert.expiryDate || null,
+                        credentialId: cert.credential_id || cert.credentialId || null,
+                        credentialUrl: cert.credential_url || cert.credentialUrl || null
                     })
                 );
                 await queryRunner.manager.save(certs);
@@ -327,11 +327,11 @@ export class CvService {
                     queryRunner.manager.create(CvCertification, {
                         cvId: savedCv.id,
                         name: cert.name,
-                        organization: cert.organization,
-                        issueDate: cert.issueDate,
-                        expiryDate: cert.expiryDate,
-                        credentialId: cert.credentialId,
-                        credentialUrl: cert.credentialUrl
+                        organization: cert.organization || null,
+                        issueDate: cert.issueDate || null,
+                        expiryDate: cert.expiryDate || null,
+                        credentialId: cert.credentialId || null,
+                        credentialUrl: cert.credentialUrl || null
                     })
                 );
                 await queryRunner.manager.save(certs);

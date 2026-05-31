@@ -116,9 +116,10 @@ export default function CandidateInsightDrawer({ isOpen, onClose, application, j
 
     if (!application && isOpen) return null;
 
-    const candidate = application?.candidate || {};
-    const aiReport = application?.aiReport || null;
-    const score = Math.round(application?.score || 0);
+    const appData = fullApplication || application;
+    const candidate = appData?.candidate || {};
+    const aiReport = appData?.aiReport || null;
+    const score = Math.round(appData?.score || 0);
 
     return (
         <AnimatePresence>
@@ -330,7 +331,7 @@ export default function CandidateInsightDrawer({ isOpen, onClose, application, j
 
                         {/* Content Area */}
                         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
-                            {application.status === 'REJECTED' && (
+                            {appData.status === 'REJECTED' && (
                                 <div style={{ 
                                     marginBottom: '32px', 
                                     padding: '24px', 
@@ -347,13 +348,13 @@ export default function CandidateInsightDrawer({ isOpen, onClose, application, j
                                         <h4 style={{ fontSize: '15px', fontWeight: 800, color: '#991B1B', margin: '0 0 4px' }}>Ứng viên đã bị từ chối</h4>
                                         <p style={{ fontSize: '14px', color: '#B91C1C', margin: '0 0 12px', opacity: 0.8 }}>Lý do từ chối đã được gửi tới ứng viên:</p>
                                         <div style={{ padding: '12px 16px', backgroundColor: 'white', borderRadius: '12px', border: '1px solid #FEE2E2', fontSize: '14px', color: '#475569', lineHeight: 1.5 }}>
-                                            {application.rejectionReason || "Chưa cung cấp lý do chi tiết."}
+                                            {appData.rejectionReason || "Chưa cung cấp lý do chi tiết."}
                                         </div>
                                     </div>
                                 </div>
                             )}
 
-                            {application.withdrawStatus === 'PENDING' && (
+                            {appData.withdrawStatus === 'PENDING' && (
                                 <div style={{ 
                                     marginBottom: '32px', 
                                     padding: '24px', 
@@ -370,7 +371,7 @@ export default function CandidateInsightDrawer({ isOpen, onClose, application, j
                                         <h4 style={{ fontSize: '15px', fontWeight: 800, color: '#9A3412', margin: '0 0 4px' }}>Yêu cầu hủy ứng tuyển</h4>
                                         <p style={{ fontSize: '14px', color: '#C2410C', margin: '0 0 12px', opacity: 0.8 }}>Ứng viên mong muốn rút hồ sơ với lý do:</p>
                                         <div style={{ padding: '12px 16px', backgroundColor: 'white', borderRadius: '12px', border: '1px solid #FFEDD5', fontSize: '14px', color: '#475569', lineHeight: 1.5, marginBottom: '16px' }}>
-                                            {application.withdrawReason || "Không có lý do cụ thể."}
+                                            {appData.withdrawReason || "Không có lý do cụ thể."}
                                         </div>
                                         <button
                                             onClick={async () => {
@@ -546,7 +547,7 @@ export default function CandidateInsightDrawer({ isOpen, onClose, application, j
                                                         <BarChart3 size={18} />
                                                         <span style={{ fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ĐÁNH GIÁ HIỆU SUẤT AI</span>
                                                     </div>
-                                                    {(application?.aiFeedback || aiFeedback) && (
+                                                    {(appData?.aiFeedback || aiFeedback) && (
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: '#F0FDF4', borderRadius: '100px', color: '#16A34A', fontSize: '11px', fontWeight: 800 }}>
                                                             <CheckCircle2 size={14} /> ĐÃ ĐÁNH GIÁ
                                                         </div>
@@ -778,14 +779,14 @@ export default function CandidateInsightDrawer({ isOpen, onClose, application, j
                                         <h4 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>Câu trả lời của ứng viên</h4>
                                     </div>
 
-                                    {!application?.answers || application.answers.length === 0 ? (
+                                    {!appData?.answers || appData.answers.length === 0 ? (
                                         <div style={{ textAlign: 'center', padding: '60px', color: '#94A3B8' }}>
                                             <MessageSquare size={60} style={{ marginBottom: '20px', opacity: 0.2 }} />
                                             <p>Ứng viên chưa hoàn thành bộ câu hỏi hoặc không có câu trả lời nào.</p>
                                         </div>
                                     ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                                            {application.answers.map((answer: any, idx: number) => {
+                                            {appData.answers.map((answer: any, idx: number) => {
                                                 // 1. Try to get question details directly from the answer object
                                                 let questionDetails = answer.question;
                                                 

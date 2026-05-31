@@ -8,6 +8,7 @@ import { UserModule } from '../user/user.module';
 import { CompanyModule } from '../company/company.module';
 import { QuestionBankModule } from '../question-bank/question-bank.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { NotificationModule } from '../notification/notification.module';
 
 @Global()
 @Module({
@@ -15,6 +16,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         UserModule,
         CompanyModule,
         QuestionBankModule,
+        NotificationModule,
         PassportModule,
         JwtModule.registerAsync({
             imports: [ConfigModule],

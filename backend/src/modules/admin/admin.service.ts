@@ -60,7 +60,7 @@ export class AdminService {
             avgAccuracy: accuracy,
             avgLatencyMs: 850,
             tokenUsage: "4.2M / 10M",
-            topModel: activeModel || 'gemini-1.5-pro',
+            topModel: activeModel || 'gemini-2.5-flash',
             anomalies: feedbackApps.map(app => ({
                 id: app.id,
                 candidate: `${app.candidate?.firstName || 'Unknown'} ${app.candidate?.lastName || ''}`,

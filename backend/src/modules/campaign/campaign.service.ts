@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, OnModuleInit, BadRequestException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In, LessThan } from 'typeorm';
@@ -6,6 +6,7 @@ import { Campaign } from './entities/campaign.entity';
 import { Job } from '../job/entities/job.entity';
 import { JobSkill } from '../job/entities/job-skill.entity';
 import { JobRequirement } from '../job/entities/job-requirement.entity';
+import { Company } from '../company/entities/company.entity';
 
 @Injectable()
 export class CampaignService implements OnModuleInit {
@@ -31,29 +32,102 @@ export class CampaignService implements OnModuleInit {
         });
     }
 
-    async findAllByCompany(companyId: string) {
+    async findAllByCompany(companyId: string, user?: any) {
+        const company = await this.dataSource.getRepository(Company).findOne({ where: { id: companyId } });
+        if (!company) {
+            throw new NotFoundException('Company not found');
+        }
+
+        const isOwnerOrAdmin = user && (user.role === 'ADMIN' || user.companyId === companyId);
+
+        if (!isOwnerOrAdmin) {
+            // Public / Candidate view: only active campaigns of approved company
+            if (company.status !== 'APPROVED') {
+                return [];
+            }
+
+            const campaigns = await this.campaignRepository.find({
+                where: { companyId, status: 'ACTIVE' },
+                relations: ['jobs', 'company'],
+                order: { createdAt: 'DESC' }
+            });
+
+            // Filter jobs to only show ACTIVE ones for candidates/public
+            for (const campaign of campaigns) {
+                if (campaign.jobs) {
+                    campaign.jobs = campaign.jobs.filter(job => job.status === 'ACTIVE');
+                }
+            }
+            return campaigns;
+        }
+
+        // Owner/Admin view
         return await this.campaignRepository.find({
             where: { companyId },
-            relations: ['jobs'],
-            order: { createdAt: 'DESC' }
-        });
-    }
-
-    async findAllActive() {
-        return await this.campaignRepository.find({
-            where: { status: 'ACTIVE' },
             relations: ['jobs', 'company'],
             order: { createdAt: 'DESC' }
         });
     }
 
-    async findOne(id: string) {
+    async findAllActive() {
+        const campaigns = await this.campaignRepository.createQueryBuilder('campaign')
+            .leftJoinAndSelect('campaign.company', 'company')
+            .leftJoinAndSelect('campaign.jobs', 'jobs')
+            .leftJoinAndSelect('jobs.position', 'position')
+            .leftJoinAndSelect('jobs.level', 'level')
+            .where('campaign.status = :status', { status: 'ACTIVE' })
+            .andWhere('company.status = :companyStatus', { companyStatus: 'APPROVED' })
+            .orderBy('campaign.createdAt', 'DESC')
+            .getMany();
+
+        for (const campaign of campaigns) {
+            if (campaign.jobs) {
+                campaign.jobs = campaign.jobs.filter(job => job.status === 'ACTIVE');
+
+                const jobsWithStats = await Promise.all(campaign.jobs.map(async (job) => {
+                    const appliedCount = await this.dataSource.getRepository('Application').count({
+                        where: { jobId: job.id }
+                    });
+                    const interviewingCount = await this.dataSource.getRepository('Application').count({
+                        where: { jobId: job.id, status: In(['INTERVIEWING', 'INVITED']) }
+                    });
+                    return {
+                        ...job,
+                        stats: {
+                            appliedCount,
+                            interviewingCount
+                        }
+                    };
+                }));
+                campaign.jobs = jobsWithStats;
+            }
+        }
+
+        return campaigns;
+    }
+
+    async findOne(id: string, user?: any) {
         const campaign = await this.campaignRepository.findOne({
             where: { id },
             relations: ['jobs', 'jobs.position', 'jobs.level', 'company']
         });
 
         if (!campaign) throw new NotFoundException('Campaign not found');
+
+        const isOwnerOrAdmin = user && (user.role === 'ADMIN' || user.companyId === campaign.companyId);
+
+        if (!isOwnerOrAdmin) {
+            if (!campaign.company || campaign.company.status !== 'APPROVED') {
+                throw new BadRequestException('Chiến dịch tuyển dụng này chưa được phê duyệt.');
+            }
+            if (campaign.status !== 'ACTIVE') {
+                throw new BadRequestException('Chiến dịch tuyển dụng này hiện không hoạt động.');
+            }
+        }
+
+        if (!isOwnerOrAdmin && campaign.jobs) {
+            campaign.jobs = campaign.jobs.filter(job => job.status === 'ACTIVE');
+        }
 
         // Add counts for each job
         if (campaign.jobs && campaign.jobs.length > 0) {
@@ -65,7 +139,6 @@ export class CampaignService implements OnModuleInit {
                     where: { jobId: job.id, status: In(['INTERVIEWING', 'INVITED']) }
                 });
 
-                // Also get icons/top AI candidates if needed later
                 return {
                     ...job,
                     stats: {
@@ -86,6 +159,10 @@ export class CampaignService implements OnModuleInit {
         await queryRunner.startTransaction();
 
         try {
+            // Check company approval status
+            const company = await queryRunner.manager.findOne(Company, { where: { id: user.companyId } });
+            const isCompanyApproved = company && company.status === 'APPROVED';
+
             // 1. Create Campaign
             const campaignData = {
                 name: data.name,
@@ -99,7 +176,7 @@ export class CampaignService implements OnModuleInit {
             const campaign = this.campaignRepository.create(campaignData);
             const savedCampaign = await queryRunner.manager.save(campaign);
 
-            // 2. Clone Jobs from templates (data.jobIds or data.reuseJobIds)
+            // 2. Clone/Link Jobs from templates (data.jobIds or data.reuseJobIds)
             const templateJobIds = [...(data.jobIds || []), ...(data.reuseJobIds || [])];
             const uniqueTemplateIds = [...new Set(templateJobIds)] as string[];
 
@@ -107,63 +184,73 @@ export class CampaignService implements OnModuleInit {
                 for (const templateId of uniqueTemplateIds) {
                     const templateJob = await queryRunner.manager.findOne(Job, {
                         where: { id: templateId, companyId: user.companyId },
-                        relations: ['skills', 'requirements', 'questionSets']
+                        relations: ['skills', 'requirements', 'questionSets', 'campaigns']
                     });
 
                     if (templateJob) {
-                        // Create a NEW Job record from template content
-                        const newJob = new Job();
-                        newJob.title = templateJob.title;
-                        newJob.description = templateJob.description;
-                        newJob.responsibilities = templateJob.responsibilities;
-                        newJob.benefits = templateJob.benefits;
-                        newJob.companyId = user.companyId;
-                        newJob.categoryId = templateJob.categoryId;
-                        newJob.minSalary = templateJob.minSalary;
-                        newJob.maxSalary = templateJob.maxSalary;
-                        newJob.workLocation = templateJob.workLocation;
-                        newJob.type = templateJob.type;
-                        newJob.positionId = templateJob.positionId;
-                        newJob.levelId = templateJob.levelId;
-                        newJob.quantity = templateJob.quantity;
-                        newJob.minExperience = templateJob.minExperience;
-                        newJob.experienceNote = templateJob.experienceNote;
-                        newJob.minEducation = templateJob.minEducation;
-                        newJob.certificates = templateJob.certificates;
-                        newJob.status = 'ACTIVE';
-                        newJob.campaigns = [savedCampaign]; // Link to new campaign
+                        const hasCampaign = templateJob.campaigns && templateJob.campaigns.length > 0;
+                        if (!hasCampaign) {
+                            // Link existing job directly to campaign
+                            templateJob.campaigns = [savedCampaign];
+                            await queryRunner.manager.save(Job, templateJob);
+                            this.logger.log(`Linked existing job ${templateJob.id} directly to campaign ${savedCampaign.id}`);
+                        } else {
+                            // Create a NEW Job record from template content
+                            const newJob = new Job();
+                            newJob.title = templateJob.title;
+                            newJob.description = templateJob.description;
+                            newJob.responsibilities = templateJob.responsibilities;
+                            newJob.benefits = templateJob.benefits;
+                            newJob.companyId = user.companyId;
+                            newJob.categoryId = templateJob.categoryId;
+                            newJob.minSalary = templateJob.minSalary;
+                            newJob.maxSalary = templateJob.maxSalary;
+                            newJob.workLocation = templateJob.workLocation;
+                            newJob.type = templateJob.type;
+                            newJob.positionId = templateJob.positionId;
+                            newJob.levelId = templateJob.levelId;
+                            newJob.quantity = templateJob.quantity;
+                            newJob.minExperience = templateJob.minExperience;
+                            newJob.experienceNote = templateJob.experienceNote;
+                            newJob.minEducation = templateJob.minEducation;
+                            newJob.certificates = templateJob.certificates;
+                            newJob.status = isCompanyApproved ? 'ACTIVE' : 'DRAFT';
+                            newJob.expiredAt = templateJob.expiredAt;
+                            newJob.campaigns = [savedCampaign]; // Link to new campaign
 
-                        const savedNewJob = await queryRunner.manager.save(Job, newJob);
+                            const savedNewJob = await queryRunner.manager.save(Job, newJob);
 
-                        // Clone Skills
-                        if (templateJob.skills?.length) {
-                            const newSkills = templateJob.skills.map(s => {
-                                const ns = new JobSkill();
-                                ns.skillName = s.skillName;
-                                ns.isRequired = s.isRequired;
-                                ns.jobId = savedNewJob.id;
-                                return ns;
-                            });
-                            await queryRunner.manager.save(JobSkill, newSkills);
-                        }
+                            // Clone Skills
+                            if (templateJob.skills?.length) {
+                                const newSkills = templateJob.skills.map(s => {
+                                    const ns = new JobSkill();
+                                    ns.skillName = s.skillName;
+                                    ns.isRequired = s.isRequired;
+                                    ns.jobId = savedNewJob.id;
+                                    return ns;
+                                });
+                                await queryRunner.manager.save(JobSkill, newSkills);
+                            }
 
-                        // Clone Requirements
-                        if (templateJob.requirements?.length) {
-                            const newReqs = templateJob.requirements.map(r => {
-                                const nr = new JobRequirement();
-                                nr.requiredPosition = r.requiredPosition;
-                                nr.minYears = r.minYears;
-                                nr.industryContext = r.industryContext;
-                                nr.jobId = savedNewJob.id;
-                                return nr;
-                            });
-                            await queryRunner.manager.save(JobRequirement, newReqs);
-                        }
+                            // Clone Requirements
+                            if (templateJob.requirements?.length) {
+                                const newReqs = templateJob.requirements.map(r => {
+                                    const nr = new JobRequirement();
+                                    nr.requiredPosition = r.requiredPosition;
+                                    nr.minYears = r.minYears;
+                                    nr.industryContext = r.industryContext;
+                                    nr.jobId = savedNewJob.id;
+                                    return nr;
+                                });
+                                await queryRunner.manager.save(JobRequirement, newReqs);
+                            }
 
-                        // Link Question Sets (shared)
-                        if (templateJob.questionSets?.length) {
-                            savedNewJob.questionSets = templateJob.questionSets;
-                            await queryRunner.manager.save(Job, savedNewJob);
+                            // Link Question Sets (shared)
+                            if (templateJob.questionSets?.length) {
+                                savedNewJob.questionSets = templateJob.questionSets;
+                                await queryRunner.manager.save(Job, savedNewJob);
+                            }
+                            this.logger.log(`Cloned template job ${templateJob.id} into new job ${savedNewJob.id} for campaign ${savedCampaign.id}`);
                         }
                     }
                 }
@@ -194,6 +281,9 @@ export class CampaignService implements OnModuleInit {
                 throw new Error('Campaign not found');
             }
 
+            const company = await queryRunner.manager.findOne(Company, { where: { id: campaign.companyId } });
+            const isCompanyApproved = company && company.status === 'APPROVED';
+
             const updateData: any = {};
             if (data.name) updateData.name = data.name;
             if (data.description) updateData.description = data.description;
@@ -205,6 +295,7 @@ export class CampaignService implements OnModuleInit {
 
             // Recalculate status based on new dates if status is ACTIVE/UPCOMING or not provided
             // This ensures that setting a future date will force the status to UPCOMING
+            let finalStatus = data.status || campaign.status;
             const isDefaultStatus = !data.status || data.status === 'ACTIVE' || data.status === 'UPCOMING';
             if (isDefaultStatus && (data.startDate || data.endDate)) {
                 const updatedCampaign = await queryRunner.manager.findOne(Campaign, { where: { id } });
@@ -221,6 +312,9 @@ export class CampaignService implements OnModuleInit {
 
                 if (newStatus !== updatedCampaign.status) {
                     await queryRunner.manager.update(Campaign, id, { status: newStatus });
+                    finalStatus = newStatus;
+                } else {
+                    finalStatus = updatedCampaign.status;
                 }
             }
 
@@ -240,54 +334,65 @@ export class CampaignService implements OnModuleInit {
                     }
                 }
 
-                // 2. Identify NEW jobs to clone (those not already in this campaign)
+                // 2. Identify NEW jobs to link or clone (those not already in this campaign)
                 const idsToClone = uniqueIncomingIds.filter(iid => !currentJobIds.includes(iid));
                 for (const templateId of idsToClone) {
                     const templateJob = await queryRunner.manager.findOne(Job, {
                         where: { id: templateId },
-                        relations: ['skills', 'requirements', 'questionSets']
+                        relations: ['skills', 'requirements', 'questionSets', 'campaigns']
                     });
 
                     if (templateJob) {
-                        const newJob = new Job();
-                        newJob.title = templateJob.title;
-                        newJob.description = templateJob.description;
-                        newJob.responsibilities = templateJob.responsibilities;
-                        newJob.benefits = templateJob.benefits;
-                        newJob.companyId = templateJob.companyId;
-                        newJob.categoryId = templateJob.categoryId;
-                        newJob.minSalary = templateJob.minSalary;
-                        newJob.maxSalary = templateJob.maxSalary;
-                        newJob.workLocation = templateJob.workLocation;
-                        newJob.type = templateJob.type;
-                        newJob.positionId = templateJob.positionId;
-                        newJob.levelId = templateJob.levelId;
-                        newJob.quantity = templateJob.quantity;
-                        newJob.minExperience = templateJob.minExperience;
-                        newJob.experienceNote = templateJob.experienceNote;
-                        newJob.minEducation = templateJob.minEducation;
-                        newJob.certificates = templateJob.certificates;
-                        newJob.status = 'ACTIVE';
-                        newJob.campaigns = [campaign];
+                        const hasCampaign = templateJob.campaigns && templateJob.campaigns.length > 0;
+                        if (!hasCampaign) {
+                            // Link directly
+                            templateJob.campaigns = [campaign];
+                            await queryRunner.manager.save(Job, templateJob);
+                            this.logger.log(`Linked existing job ${templateJob.id} directly to campaign ${campaign.id} during update`);
+                        } else {
+                            // Clone
+                            const newJob = new Job();
+                            newJob.title = templateJob.title;
+                            newJob.description = templateJob.description;
+                            newJob.responsibilities = templateJob.responsibilities;
+                            newJob.benefits = templateJob.benefits;
+                            newJob.companyId = templateJob.companyId;
+                            newJob.categoryId = templateJob.categoryId;
+                            newJob.minSalary = templateJob.minSalary;
+                            newJob.maxSalary = templateJob.maxSalary;
+                            newJob.workLocation = templateJob.workLocation;
+                            newJob.type = templateJob.type;
+                            newJob.positionId = templateJob.positionId;
+                            newJob.levelId = templateJob.levelId;
+                            newJob.quantity = templateJob.quantity;
+                            newJob.minExperience = templateJob.minExperience;
+                            newJob.experienceNote = templateJob.experienceNote;
+                            newJob.minEducation = templateJob.minEducation;
+                            newJob.certificates = templateJob.certificates;
+                            newJob.status = isCompanyApproved ? 'ACTIVE' : 'DRAFT';
+                            newJob.expiredAt = templateJob.expiredAt;
+                            newJob.campaigns = [campaign];
 
-                        const savedNewJob = await queryRunner.manager.save(Job, newJob);
+                            const savedNewJob = await queryRunner.manager.save(Job, newJob);
 
-                        if (templateJob.skills?.length) {
-                            await queryRunner.manager.save(JobSkill, templateJob.skills.map(s => ({ ...s, id: undefined, jobId: savedNewJob.id })));
-                        }
-                        if (templateJob.requirements?.length) {
-                            await queryRunner.manager.save(JobRequirement, templateJob.requirements.map(r => ({ ...r, id: undefined, jobId: savedNewJob.id })));
-                        }
-                        if (templateJob.questionSets?.length) {
-                            savedNewJob.questionSets = templateJob.questionSets;
-                            await queryRunner.manager.save(Job, savedNewJob);
+                            if (templateJob.skills?.length) {
+                                await queryRunner.manager.save(JobSkill, templateJob.skills.map(s => ({ ...s, id: undefined, jobId: savedNewJob.id })));
+                            }
+                            if (templateJob.requirements?.length) {
+                                await queryRunner.manager.save(JobRequirement, templateJob.requirements.map(r => ({ ...r, id: undefined, jobId: savedNewJob.id })));
+                            }
+                            if (templateJob.questionSets?.length) {
+                                savedNewJob.questionSets = templateJob.questionSets;
+                                await queryRunner.manager.save(Job, savedNewJob);
+                            }
+                            this.logger.log(`Cloned template job ${templateJob.id} into new job ${savedNewJob.id} for campaign ${campaign.id} during update`);
                         }
                     }
                 }
             }
 
             // Cascade status changes to jobs if campaign is closed or reopened
-            if (data.status === 'COMPLETED' || data.status === 'ARCHIVED' || data.status === 'ACTIVE') {
+            if (finalStatus === 'COMPLETED' || finalStatus === 'ARCHIVED' || finalStatus === 'ACTIVE') {
                 const campaignWithJobs = await queryRunner.manager.findOne(Campaign, {
                     where: { id },
                     relations: ['jobs']
@@ -295,8 +400,26 @@ export class CampaignService implements OnModuleInit {
                 
                 if (campaignWithJobs.jobs?.length > 0) {
                     const jobIds = campaignWithJobs.jobs.map(j => j.id);
-                    const newJobStatus = (data.status === 'COMPLETED' || data.status === 'ARCHIVED') ? 'CLOSED' : 'ACTIVE';
-                    await queryRunner.manager.update(Job, jobIds, { status: newJobStatus });
+                    if (finalStatus === 'COMPLETED' || finalStatus === 'ARCHIVED') {
+                        await queryRunner.manager.update(Job, jobIds, { status: 'CLOSED' });
+                    } else if (finalStatus === 'ACTIVE') {
+                        if (isCompanyApproved) {
+                            const now = new Date();
+                            for (const jId of jobIds) {
+                                const job = await queryRunner.manager.findOne(Job, { where: { id: jId } });
+                                if (job) {
+                                    if (!job.expiredAt || new Date(job.expiredAt) > now) {
+                                        job.status = 'ACTIVE';
+                                    } else {
+                                        job.status = 'CLOSED';
+                                    }
+                                    await queryRunner.manager.save(Job, job);
+                                }
+                            }
+                        } else {
+                            await queryRunner.manager.update(Job, jobIds, { status: 'DRAFT' });
+                        }
+                    }
                 }
             }
 

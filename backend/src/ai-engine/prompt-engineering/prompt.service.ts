@@ -61,7 +61,7 @@ export class PromptService {
     }
 
     private async getModel() {
-        const modelName = await this.settingService.get('ai_model') || 'gemini-1.5-pro';
+        const modelName = await this.settingService.get('ai_model') || 'gemini-2.5-flash';
         return this.genAI.getGenerativeModel({
             model: modelName,
             generationConfig: {

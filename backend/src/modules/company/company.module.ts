@@ -6,11 +6,13 @@ import { CompanyController } from './company.controller';
 import { Staff } from './entities/staff.entity';
 import { CompanyGallery } from './entities/gallery.entity';
 import { QuestionBankModule } from '../question-bank/question-bank.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Company, Staff, CompanyGallery]),
-    QuestionBankModule
+    QuestionBankModule,
+    NotificationModule
   ],
   controllers: [CompanyController],
   providers: [CompanyService],

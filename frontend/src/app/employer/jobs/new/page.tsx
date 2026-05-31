@@ -16,12 +16,14 @@ import {
     Sparkles
 } from "lucide-react";
 import { jobService } from "@/services/job.service";
+import { authService } from "@/services/auth.service";
 import { useRouter } from "next/navigation";
 
 export default function NewJobPage() {
     const router = useRouter();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
+    const [companyStatus, setCompanyStatus] = useState<string>("APPROVED");
     const [formData, setFormData] = useState({
         title: "",
         description: "",
@@ -37,7 +39,7 @@ export default function NewJobPage() {
     const handleSubmit = async () => {
         setLoading(true);
         try {
-            await jobService.createJob(formData);
+            await jobService.create(formData);
             router.push("/employer/jobs");
         } catch (error) {
             console.error("Error creating job:", error);
@@ -45,6 +47,16 @@ export default function NewJobPage() {
             setLoading(false);
         }
     };
+ 
+    React.useEffect(() => {
+        authService.getProfile()
+            .then(data => {
+                if (data?.company?.status) {
+                    setCompanyStatus(data.company.status);
+                }
+            })
+            .catch(err => console.error("Failed to load company status on new job page", err));
+    }, []);
 
     return (
         <EmployerLayout>
@@ -71,20 +83,20 @@ export default function NewJobPage() {
                                     label="Job Title"
                                     placeholder="e.g. Senior Principal Designer"
                                     value={formData.title}
-                                    onChange={(v) => setFormData({ ...formData, title: v })}
+                                    onChange={(v: any) => setFormData({ ...formData, title: v })}
                                 />
                                 <div className="grid grid-cols-2 gap-6">
                                     <InputField
                                         label="Work Location"
                                         icon={<MapPin size={16} />}
                                         value={formData.work_location}
-                                        onChange={(v) => setFormData({ ...formData, work_location: v })}
+                                        onChange={(v: any) => setFormData({ ...formData, work_location: v })}
                                     />
                                     <InputField
                                         label="Work Type"
                                         icon={<Clock size={16} />}
                                         value={formData.work_time}
-                                        onChange={(v) => setFormData({ ...formData, work_time: v })}
+                                        onChange={(v: any) => setFormData({ ...formData, work_time: v })}
                                     />
                                 </div>
                             </div>
@@ -99,27 +111,27 @@ export default function NewJobPage() {
                                 />
                             </div>
 
-                            <div className="grid grid-cols-3 gap-8">
+                             <div className="grid grid-cols-3 gap-8">
                                 <InputField
                                     label="Positions"
                                     icon={<Layers size={16} />}
                                     type="number"
                                     value={formData.quantity}
-                                    onChange={(v) => setFormData({ ...formData, quantity: parseInt(v) })}
+                                    onChange={(v: any) => setFormData({ ...formData, quantity: parseInt(v) })}
                                 />
                                 <InputField
                                     label="Salary (Min)"
                                     icon={<DollarSign size={16} />}
                                     type="number"
                                     value={formData.salary_min}
-                                    onChange={(v) => setFormData({ ...formData, salary_min: parseInt(v) })}
+                                    onChange={(v: any) => setFormData({ ...formData, salary_min: parseInt(v) })}
                                 />
                                 <InputField
                                     label="Salary (Max)"
                                     icon={<DollarSign size={16} />}
                                     type="number"
                                     value={formData.salary_max}
-                                    onChange={(v) => setFormData({ ...formData, salary_max: parseInt(v) })}
+                                    onChange={(v: any) => setFormData({ ...formData, salary_max: parseInt(v) })}
                                 />
                             </div>
                         </div>
@@ -150,7 +162,7 @@ export default function NewJobPage() {
                             onClick={() => step < 3 ? setStep(step + 1) : handleSubmit()}
                             className="bg-gray-900 text-white px-12 py-5 rounded-[24px] text-[10px] font-black uppercase tracking-widest shadow-2xl shadow-gray-200 hover:scale-105 transition-all flex items-center gap-4"
                         >
-                            {loading ? 'Processing...' : step === 3 ? 'Publish Opportunity' : 'Continue Workflow'}
+                            {loading ? 'Processing...' : (step === 3 ? (companyStatus === 'APPROVED' ? 'Publish Opportunity' : 'Save as Draft (Pending Approval)') : 'Continue Workflow')}
                             <ChevronRight size={16} />
                         </button>
                     </div>
