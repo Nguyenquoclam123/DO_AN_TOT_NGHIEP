@@ -22,8 +22,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { icon: <LayoutDashboard size={20} />, label: "Health Overview", href: "/admin/dashboard" },
         { icon: <BrainCircuit size={20} />, label: "AI Control Center", href: "/admin/ai-center" },
         { icon: <Settings size={20} />, label: "AI Models Config", href: "/admin/ai-management" },
-        { icon: <Users size={20} />, label: "Employer Audit", href: "/admin/employers" },
-        { icon: <ShieldCheck size={20} />, label: "Companies", href: "/admin/companies" },
+        { icon: <ShieldCheck size={20} />, label: "Company Management", href: "/admin/companies" },
         { icon: <BarChart3 size={20} />, label: "Jobs Repository", href: "/admin/jobs" },
         { icon: <BookOpen size={20} />, label: "Question Bank", href: "/admin/question-bank" },
     ];

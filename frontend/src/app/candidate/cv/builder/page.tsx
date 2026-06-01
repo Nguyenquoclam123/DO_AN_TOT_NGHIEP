@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     User,
@@ -48,7 +50,10 @@ export default function CandidateCVBuilderPage() {
     const [history, setHistory] = useState<any>({ summaries: [], experiences: [], skills: [], projects: [], educations: [], certifications: [] });
     const [showHistory, setShowHistory] = useState<string | null>(null);
     const [showSuccess, setShowSuccess] = useState(false);
-
+    const [isParsing, setIsParsing] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const [previewTab, setPreviewTab] = useState<'profile' | 'pdf'>('profile');
+    const [showPdfPanel, setShowPdfPanel] = useState(false);
     const [activeSection, setActiveSection] = useState('section-identity');
     const [completionRate, setCompletionRate] = useState(0);
 
@@ -65,8 +70,21 @@ export default function CandidateCVBuilderPage() {
         educations: [],
         skills: [],
         projects: [],
-        certifications: []
+        certifications: [],
+        fileUrl: ""
     });
+
+    React.useEffect(() => {
+        if (formData.fileUrl) {
+            setShowPdfPanel(true);
+        }
+    }, [formData.fileUrl]);
+
+    React.useEffect(() => {
+        if (isPreviewOpen) {
+            setPreviewTab('profile');
+        }
+    }, [isPreviewOpen, formData.fileUrl]);
 
     // Calculate Completion Rate
     React.useEffect(() => {
@@ -193,7 +211,8 @@ export default function CandidateCVBuilderPage() {
                                     expiryDate: c.expiryDate ? c.expiryDate.split('T')[0] : "",
                                     credentialId: c.credentialId || "",
                                     credentialUrl: c.credentialUrl || ""
-                                })) || []
+                                })) || [],
+                                fileUrl: existingCv.fileUrl || ""
                             };
                             baseData = { ...baseData, ...loadedCvData };
                         }
@@ -240,6 +259,68 @@ export default function CandidateCVBuilderPage() {
             setHistory(data);
         } catch (error) {
             console.error("Failed to fetch CV history");
+        }
+    };
+
+    const handlePdfImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (file.type !== "application/pdf" && !file.name.endsWith(".pdf")) {
+            alert("Vui lòng tải lên tệp tin định dạng PDF.");
+            return;
+        }
+
+        setIsParsing(true);
+        try {
+            const parsedData = await cvService.parsePdfOnly(file);
+            
+            setFormData(prev => ({
+                ...prev,
+                cvTitle: parsedData.cvTitle || prev.cvTitle,
+                summary: parsedData.summary || "",
+                fileUrl: parsedData.fileUrl || "",
+                experiences: parsedData.experiences?.map((exp: any) => ({
+                    companyName: exp.company_name || exp.companyName || "",
+                    position: exp.position || "",
+                    startDate: exp.start_date || exp.startDate || "",
+                    endDate: exp.end_date || exp.endDate || "",
+                    isPresent: exp.is_current || exp.isCurrent || false,
+                    description: exp.description || ""
+                })) || [],
+                educations: parsedData.educations?.map((edu: any) => ({
+                    schoolName: edu.school_name || edu.schoolName || "",
+                    degree: edu.degree || "",
+                    major: edu.major || "",
+                    gradYear: edu.end_date ? new Date(edu.end_date).getFullYear().toString() : ""
+                })) || [],
+                skills: parsedData.skills?.map((s: any) => ({
+                    skillName: s.skill_name || s.name || "",
+                    level: s.level || "Expert"
+                })) || [],
+                projects: parsedData.projects?.map((p: any) => ({
+                    name: p.name || "",
+                    role: p.role || "",
+                    techStack: p.tech_stack || p.techStack || "",
+                    url: p.url || ""
+                })) || [],
+                certifications: parsedData.certifications?.map((c: any) => ({
+                    name: c.name || "",
+                    organization: c.organization || "",
+                    issueDate: c.issue_date || c.issueDate || "",
+                    expiryDate: c.expiry_date || c.expiryDate || "",
+                    credentialId: c.credential_id || c.credentialId || "",
+                    credentialUrl: c.credential_url || c.credentialUrl || ""
+                })) || []
+            }));
+
+            alert("✨ Nhập dữ liệu từ PDF thành công! Dữ liệu đã được điền tự động vào biểu mẫu, vui lòng kiểm tra và hoàn tất chỉnh sửa.");
+        } catch (error: any) {
+            console.error("PDF import failed:", error);
+            alert(error.message || "Không thể phân tích file PDF. Vui lòng thử lại.");
+        } finally {
+            setIsParsing(false);
+            if (event.target) event.target.value = '';
         }
     };
 
@@ -432,6 +513,16 @@ export default function CandidateCVBuilderPage() {
                 </div>
             )}
 
+            {isParsing && (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+                    <div style={{ width: '56px', height: '56px', border: '4px solid rgba(255, 255, 255, 0.1)', borderTop: '4px solid #5C9AFF', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+                    <div style={{ textAlign: 'center', color: 'white' }}>
+                        <p style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 8px' }}>AI đang phân tích CV của bạn</p>
+                        <p style={{ fontSize: '13px', color: '#94A3B8', margin: 0 }}>Quá trình bóc tách dữ liệu kinh nghiệm, học vấn và kỹ năng có thể mất một vài giây...</p>
+                    </div>
+                </div>
+            )}
+
             {/* Refined Success Modal */}
             <AnimatePresence>
                 {showSuccess && (
@@ -482,9 +573,23 @@ export default function CandidateCVBuilderPage() {
                                     <Eye size={20} color="#5C9AFF" />
                                 </div>
                                 <div>
-                                    <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: 0 }}>Review Optimized CV</h2>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: 0 }}>Review CV</h2>
                                     <p style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI-Powered Smart Preview</p>
                                 </div>
+                                {formData.fileUrl && (
+                                    <div style={{ display: 'flex', backgroundColor: '#F1F5F9', padding: '4px', borderRadius: '10px', marginLeft: '24px' }}>
+                                        <button 
+                                            onClick={() => setPreviewTab('profile')}
+                                            style={{ padding: '6px 14px', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', backgroundColor: previewTab === 'profile' ? 'white' : 'transparent', color: previewTab === 'profile' ? '#5C9AFF' : '#64748B', transition: 'all 0.2s' }}>
+                                            CV Thiết kế
+                                        </button>
+                                        <button 
+                                            onClick={() => setPreviewTab('pdf')}
+                                            style={{ padding: '6px 14px', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', backgroundColor: previewTab === 'pdf' ? 'white' : 'transparent', color: previewTab === 'pdf' ? '#5C9AFF' : '#64748B', transition: 'all 0.2s' }}>
+                                            Bản gốc PDF
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                             <div style={{ display: 'flex', gap: '16px' }}>
                                 <button style={{ padding: '12px 24px', backgroundColor: '#5C9AFF', color: 'white', border: 'none', borderRadius: '14px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 10px 15px -3px rgba(37, 99, 235, 0.3)' }}>
@@ -498,8 +603,19 @@ export default function CandidateCVBuilderPage() {
 
                         {/* CV Paper Content */}
                         <div style={{ padding: '60px 80px' }}>
-                            {/* Header Section */}
-                            <div style={{ marginBottom: '60px', position: 'relative' }}>
+                            {previewTab === 'pdf' && formData.fileUrl ? (
+                                <div style={{ width: '100%', height: '70vh', borderRadius: '16px', overflow: 'hidden', border: '1px solid #E2E8F0' }}>
+                                    <iframe 
+                                        src={`${BASE_URL}${formData.fileUrl}`} 
+                                        width="100%" 
+                                        height="100%" 
+                                        style={{ border: 'none' }}
+                                    />
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Header Section */}
+                                    <div style={{ marginBottom: '60px', position: 'relative' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                     <div style={{ flex: 1 }}>
                                         <motion.h1 
@@ -703,6 +819,8 @@ export default function CandidateCVBuilderPage() {
                                     </section>
                                 </div>
                             </div>
+                                </>
+                            )}
                         </div>
 
                         {/* Modal Footer */}
@@ -743,6 +861,28 @@ export default function CandidateCVBuilderPage() {
                     </div> */}
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
+                    {formData.fileUrl && (
+                        <button
+                            type="button"
+                            onClick={() => setShowPdfPanel(!showPdfPanel)}
+                            style={{ 
+                                padding: '10px 20px', 
+                                backgroundColor: showPdfPanel ? '#eff6ff' : 'white', 
+                                color: showPdfPanel ? '#5C9AFF' : '#64748b', 
+                                borderRadius: '10px', 
+                                border: showPdfPanel ? '1px solid #5C9AFF' : '1px solid #e2e8f0', 
+                                fontSize: '13px', 
+                                fontWeight: 700, 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '8px', 
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <FileText size={18} /> {showPdfPanel ? 'Ẩn bản gốc PDF' : 'Xem bản gốc PDF'}
+                        </button>
+                    )}
                     <button
                         onClick={() => setIsPreviewOpen(true)}
                         style={{ padding: '10px 20px', backgroundColor: 'white', color: '#64748b', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
@@ -785,7 +925,12 @@ export default function CandidateCVBuilderPage() {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', minHeight: 'calc(100vh - 65px)' }}>
+            <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: (showPdfPanel && formData.fileUrl) ? '1.2fr 0.8fr' : '1fr', 
+                minHeight: 'calc(100vh - 65px)',
+                transition: 'grid-template-columns 0.3s ease'
+            }}>
 
                 {/* Sidebar Navigation */}
                 {/* Hiding Resume Builder sidebar content as requested */}
@@ -831,10 +976,19 @@ export default function CandidateCVBuilderPage() {
                     <div style={{ marginBottom: '48px' }}>
                         <h2 style={{ fontSize: '32px', fontWeight: 800, color: '#1e293b', margin: 0 }}>Build Your Excellence</h2>
                         <p style={{ fontSize: '15px', color: '#64748b', marginTop: '8px' }}>Every great career starts with a compelling story. Let's structure yours for success.</p>
-                        {/* Hiding Import from PDF as requested */}
-                        {/* <button style={{ marginTop: '24px', padding: '12px 24px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', color: '#1e293b', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <PlusCircle size={18} /> Import from PDF
-                        </button> */}
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            style={{ marginTop: '24px', padding: '12px 24px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', color: '#1e293b', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                            <PlusCircle size={18} /> Import dữ liệu từ PDF
+                        </button>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            accept=".pdf"
+                            onChange={handlePdfImport}
+                            style={{ display: 'none' }}
+                        />
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '48px' }}>
@@ -1423,6 +1577,56 @@ export default function CandidateCVBuilderPage() {
             ` }} />
                     </div>
                 </div>
+                {showPdfPanel && formData.fileUrl && (
+                    <div style={{ 
+                        borderLeft: '1px solid #e2e8f0', 
+                        backgroundColor: 'white', 
+                        position: 'sticky', 
+                        top: '65px', 
+                        height: 'calc(100vh - 65px)', 
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        zIndex: 5
+                    }}>
+                        <div style={{ 
+                            padding: '16px 24px', 
+                            borderBottom: '1px solid #f1f5f9', 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            backgroundColor: '#F8FAFC'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <FileText size={18} color="#5C9AFF" />
+                                <span style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>CV Bản Gốc PDF</span>
+                            </div>
+                            <button 
+                                type="button"
+                                onClick={() => setShowPdfPanel(false)}
+                                style={{ 
+                                    background: 'none', 
+                                    border: 'none', 
+                                    color: '#64748b', 
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                }}
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div style={{ flex: 1, width: '100%', height: '100%' }}>
+                            <iframe 
+                                src={`${BASE_URL}${formData.fileUrl}`} 
+                                width="100%" 
+                                height="100%" 
+                                style={{ border: 'none' }}
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

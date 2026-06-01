@@ -12,6 +12,7 @@ export interface CV {
     experiences?: any[];
     educations?: any[];
     skills?: any[];
+    fileUrl?: string;
 }
 
 export interface OptimizationSuggestion {
@@ -34,6 +35,18 @@ export const cvService = {
         return apiRequest<CV>("/cvs/upload", "POST", {
             body: { cv_title: cvTitle, file_text: fileText }
         });
+    },
+
+    uploadPdf: (file: File) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        return apiUpload<CV>("/cvs/upload-pdf", formData);
+    },
+
+    parsePdfOnly: (file: File) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        return apiUpload<any>("/cvs/parse-pdf", formData);
     },
 
     // ⭐ AI CV Optimization logic

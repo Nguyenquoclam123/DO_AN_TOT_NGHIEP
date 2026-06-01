@@ -26,6 +26,9 @@ export class CandidateCv extends BaseEntity {
     @Column({ type: 'text', nullable: true })
     avatar: string;
 
+    @Column({ name: 'file_url', type: 'character varying', nullable: true })
+    fileUrl: string;
+
     @OneToMany(() => CvExperience, (exp) => exp.cv)
     experiences: CvExperience[];
 

@@ -1,4 +1,5 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import * as pdfParse from 'pdf-parse';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { CandidateCv } from './entities/candidate-cv.entity';
@@ -142,6 +143,187 @@ export class CvService {
         }
     }
 
+    async uploadAndParsePdf(candidateId: string, file: Express.Multer.File) {
+        let fileText = '';
+        try {
+            const data = await pdfParse(file.buffer);
+            fileText = data.text;
+        } catch (e) {
+            this.logger.error(`Failed to extract text from PDF: ${e.message}`);
+            throw new BadRequestException('Failed to read PDF file. Make sure it is not corrupted and contains selectable text.');
+        }
+
+        if (!fileText || fileText.trim().length === 0) {
+            throw new BadRequestException('The uploaded PDF contains no text. Scanned documents or images are not supported.');
+        }
+
+        const fs = require('fs');
+        const path = require('path');
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const fileExt = path.extname(file.originalname);
+        const filename = `cv-${uniqueSuffix}${fileExt}`;
+        const uploadDir = path.join(process.cwd(), 'uploads');
+        
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        
+        const filePath = path.join(uploadDir, filename);
+        fs.writeFileSync(filePath, file.buffer);
+        const fileUrl = `/upload/file/${filename}`;
+
+        const existingPrimary = await this.cvRepository.findOne({
+            where: { candidateId, isPrimary: true }
+        });
+        const makePrimary = !existingPrimary;
+
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            const parsedData = await this.promptService.parseCv(fileText);
+            const cv = queryRunner.manager.create(CandidateCv, {
+                candidateId,
+                cvTitle: file.originalname.replace(/\.[^/.]+$/, ""),
+                summary: parsedData.summary,
+                cvVector: null,
+                isPrimary: makePrimary,
+                fileUrl: fileUrl
+            });
+            const savedCv = await queryRunner.manager.save(cv);
+
+            try {
+                const vector = await this.embeddingService.generateEmbedding(fileText);
+                await queryRunner.manager.update(CandidateCv, savedCv.id, {
+                    cvVector: `[${vector.join(',')}]`
+                });
+
+                await this.vectorSearchService.saveVector({
+                    refId: savedCv.id,
+                    refType: 'CV',
+                    contentType: 'CV_RAW_TEXT',
+                    rawContent: fileText.substring(0, 5000),
+                    embedding: vector
+                });
+            } catch (e) {
+                this.logger.error(`Failed to generate embedding for CV ${savedCv.id}: ${e.message}`);
+            }
+
+            if (parsedData.experiences) {
+                const exps = parsedData.experiences.map((exp: any) =>
+                    queryRunner.manager.create(CvExperience, {
+                        ...exp,
+                        cvId: savedCv.id,
+                        companyName: exp.company_name || exp.companyName,
+                        isCurrent: exp.is_current || exp.isCurrent || false,
+                        startDate: exp.start_date || exp.startDate || null,
+                        endDate: exp.end_date || exp.endDate || null
+                    })
+                );
+                await queryRunner.manager.save(exps);
+            }
+
+            if (parsedData.educations) {
+                const edus = parsedData.educations.map((edu: any) =>
+                    queryRunner.manager.create(CvEducation, {
+                        ...edu,
+                        cvId: savedCv.id,
+                        schoolName: edu.school_name || edu.schoolName,
+                        startDate: edu.start_date || edu.startDate || null,
+                        endDate: edu.end_date || edu.endDate || null
+                    })
+                );
+                await queryRunner.manager.save(edus);
+            }
+
+            if (parsedData.skills) {
+                const skills = parsedData.skills.map((skill: any) =>
+                    queryRunner.manager.create(CvSkill, {
+                        cvId: savedCv.id,
+                        name: skill.skill_name || skill.name,
+                        level: skill.level
+                    })
+                );
+                await queryRunner.manager.save(skills);
+            }
+
+            if (parsedData.projects) {
+                const projs = parsedData.projects.map((proj: any) =>
+                    queryRunner.manager.create(CvProject, {
+                        cvId: savedCv.id,
+                        name: proj.name,
+                        role: proj.role,
+                        techStack: proj.tech_stack || proj.techStack,
+                        url: proj.url
+                    })
+                );
+                await queryRunner.manager.save(projs);
+            }
+
+            if (parsedData.certifications) {
+                const certs = parsedData.certifications.map((cert: any) =>
+                    queryRunner.manager.create(CvCertification, {
+                        cvId: savedCv.id,
+                        name: cert.name,
+                        organization: cert.organization || null,
+                        issueDate: cert.issue_date || cert.issueDate || null,
+                        expiryDate: cert.expiry_date || cert.expiryDate || null,
+                        credentialId: cert.credential_id || cert.credentialId || null,
+                        credentialUrl: cert.credential_url || cert.credentialUrl || null
+                    })
+                );
+                await queryRunner.manager.save(certs);
+            }
+
+            await queryRunner.commitTransaction();
+            return savedCv;
+        } catch (error) {
+            await queryRunner.rollbackTransaction();
+            throw error;
+        } finally {
+            await queryRunner.release();
+        }
+    }
+
+    async parsePdfWithoutSaving(file: Express.Multer.File) {
+        let fileText = '';
+        try {
+            const data = await pdfParse(file.buffer);
+            fileText = data.text;
+        } catch (e) {
+            this.logger.error(`Failed to extract text from PDF: ${e.message}`);
+            throw new BadRequestException('Failed to read PDF file. Make sure it is not corrupted and contains selectable text.');
+        }
+
+        if (!fileText || fileText.trim().length === 0) {
+            throw new BadRequestException('The uploaded PDF contains no text. Scanned documents or images are not supported.');
+        }
+
+        const parsedData = await this.promptService.parseCv(fileText);
+        
+        const fs = require('fs');
+        const path = require('path');
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const fileExt = path.extname(file.originalname);
+        const filename = `cv-${uniqueSuffix}${fileExt}`;
+        const uploadDir = path.join(process.cwd(), 'uploads');
+        
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        
+        const filePath = path.join(uploadDir, filename);
+        fs.writeFileSync(filePath, file.buffer);
+        const fileUrl = `/upload/file/${filename}`;
+
+        return {
+            ...parsedData,
+            cvTitle: file.originalname.replace(/\.[^/.]+$/, ""),
+            fileUrl: fileUrl
+        };
+    }
+
     async triggerIndexing(id: string, fileText: string) {
         this.logger.log(`Re-indexing CV ${id}...`);
         const vector = await this.embeddingService.generateEmbedding(fileText);
@@ -217,6 +399,7 @@ export class CvService {
                 cv.cvTitle = data.cvTitle || cv.cvTitle;
                 cv.summary = data.summary;
                 cv.avatar = data.avatar;
+                cv.fileUrl = data.fileUrl || cv.fileUrl;
                 cv.isPrimary = data.isPrimary !== undefined ? data.isPrimary : cv.isPrimary;
 
                 // Delete old relations to replace with new ones
@@ -231,7 +414,8 @@ export class CvService {
                     cvTitle: data.cvTitle || 'Untitled CV',
                     summary: data.summary,
                     isPrimary: data.isPrimary || false,
-                    avatar: data.avatar
+                    avatar: data.avatar,
+                    fileUrl: data.fileUrl || null
                 });
             }
 

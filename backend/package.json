@@ -13,9 +13,9 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "migration:generate": "typeorm migration:generate -d dist/src/config/database.config",
-    "migration:run": "typeorm migration:run -d dist/src/database/data-source.js",
-    "migration:revert": "typeorm migration:revert -d dist/src/database/data-source.js"
+    "migration:generate": "typeorm migration:generate -d dist/config/database.config",
+    "migration:run": "typeorm migration:run -d dist/database/data-source.js",
+    "migration:revert": "typeorm migration:revert -d dist/database/data-source.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.400.0",

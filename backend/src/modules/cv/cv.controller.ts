@@ -6,8 +6,12 @@ import {
     Param,
     ParseUUIDPipe,
     UseGuards,
-    Request
+    Request,
+    UseInterceptors,
+    UploadedFile,
+    BadRequestException
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CvService } from './cv.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -31,6 +35,34 @@ export class CvController {
         @Body('file_text') fileText: string,
     ) {
         return this.cvService.uploadAndParse(req.user.id, cvTitle, fileText);
+    }
+
+    @Post('upload-pdf')
+    @Roles(Role.CANDIDATE)
+    @UseInterceptors(FileInterceptor('file'))
+    @ApiOperation({ summary: 'Upload and parse CV PDF using AI (Candidate only)' })
+    async uploadPdf(
+        @Request() req: any,
+        @UploadedFile() file: Express.Multer.File,
+    ) {
+        if (!file) {
+            throw new BadRequestException('PDF file is required');
+        }
+        return this.cvService.uploadAndParsePdf(req.user.id, file);
+    }
+
+    @Post('parse-pdf')
+    @Roles(Role.CANDIDATE)
+    @UseInterceptors(FileInterceptor('file'))
+    @ApiOperation({ summary: 'Extract and parse PDF CV without saving to DB (Candidate only)' })
+    async parsePdf(
+        @Request() req: any,
+        @UploadedFile() file: Express.Multer.File,
+    ) {
+        if (!file) {
+            throw new BadRequestException('PDF file is required');
+        }
+        return this.cvService.parsePdfWithoutSaving(file);
     }
 
     /**

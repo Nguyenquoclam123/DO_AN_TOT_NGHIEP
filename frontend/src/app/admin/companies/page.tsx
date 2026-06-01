@@ -11,7 +11,8 @@ import {
     SearchX,
     ShieldAlert,
     CheckCircle2,
-    Clock
+    Clock,
+    Mail
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -19,6 +20,8 @@ export default function AdminCompaniesPage() {
     const router = useRouter();
     const [companies, setCompanies] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<"all" | "pending" | "verified">("all");
+    const [searchQuery, setSearchQuery] = useState("");
 
     useEffect(() => {
         const fetchCompanies = async () => {
@@ -34,11 +37,39 @@ export default function AdminCompaniesPage() {
         fetchCompanies();
     }, []);
 
+    const handleQuickApprove = async (companyId: string) => {
+        try {
+            await api.patch(`/companies/${companyId}`, { isVerified: true, status: 'APPROVED' });
+            alert('Company verified successfully!');
+            setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, isVerified: true, status: 'APPROVED' } : c));
+        } catch (err) {
+            console.error("Failed to verify company", err);
+            alert('Failed to verify company');
+        }
+    };
+
     const stats = [
         { label: "TOTAL COMPANIES", value: companies.length.toString(), trend: "Real-time updates", trendColor: "#5C9AFF", bg: "#eff6ff", icon: <Building2 size={20} color="#5C9AFF" /> },
         { label: "VERIFIED", value: companies.filter(c => c.isVerified).length.toString(), trend: "Business standard", trendColor: "#10b981", bg: "#f0fdf4", icon: <CheckCircle2 size={20} color="#10b981" /> },
         { label: "PENDING", value: companies.filter(c => !c.isVerified).length.toString(), trend: "Needs review", trendColor: "#ca8a04", bg: "#fefce8", icon: <Clock size={20} color="#ca8a04" /> },
     ];
+
+    const filteredCompanies = companies.filter(company => {
+        // Tab Filter
+        if (activeTab === "pending" && company.isVerified) return false;
+        if (activeTab === "verified" && !company.isVerified) return false;
+
+        // Search Filter
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            const nameMatch = company.name?.toLowerCase().includes(query);
+            const websiteMatch = company.website?.toLowerCase().includes(query);
+            const taxCodeMatch = company.taxCode?.toLowerCase().includes(query);
+            return nameMatch || websiteMatch || taxCodeMatch;
+        }
+
+        return true;
+    });
 
     if (isLoading) {
         return <div style={{ padding: '40px' }}>Loading system data...</div>;
@@ -66,15 +97,49 @@ export default function AdminCompaniesPage() {
                 ))}
             </div>
 
+            {/* Filter Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', marginBottom: '24px', gap: '8px' }}>
+                {[
+                    { id: "all", label: `All Companies (${companies.length})` },
+                    { id: "pending", label: `Pending Audits (${companies.filter(c => !c.isVerified).length})` },
+                    { id: "verified", label: `Verified Partners (${companies.filter(c => c.isVerified).length})` }
+                ].map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        style={{
+                            padding: '12px 24px',
+                            border: 'none',
+                            background: 'none',
+                            borderBottom: activeTab === tab.id ? '2px solid #0f172a' : '2px solid transparent',
+                            color: activeTab === tab.id ? '#0f172a' : '#64748b',
+                            fontWeight: activeTab === tab.id ? 700 : 500,
+                            fontSize: '14px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            outline: 'none'
+                        }}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
             <div style={{ backgroundColor: 'white', borderRadius: '24px', border: '1px solid #f1f5f9', overflow: 'hidden' }}>
                 <div style={{ padding: '24px', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ position: 'relative', maxWidth: '400px', flex: 1 }}>
                         <Search style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} size={18} />
-                        <input type="text" placeholder="Search companies..." style={{ width: '100%', padding: '12px 16px 12px 48px', backgroundColor: '#f8fafc', border: 'none', borderRadius: '12px', fontSize: '14px', outline: 'none' }} />
+                        <input 
+                            type="text" 
+                            placeholder="Search companies..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            style={{ width: '100%', padding: '12px 16px 12px 48px', backgroundColor: '#f8fafc', border: 'none', borderRadius: '12px', fontSize: '14px', outline: 'none' }} 
+                        />
                     </div>
                 </div>
 
-                {companies.length > 0 ? (
+                {filteredCompanies.length > 0 ? (
                     <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
@@ -87,7 +152,7 @@ export default function AdminCompaniesPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {companies.map(company => (
+                                {filteredCompanies.map(company => (
                                     <tr key={company.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                         <td style={{ padding: '20px 24px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -115,12 +180,31 @@ export default function AdminCompaniesPage() {
                                             </span>
                                         </td>
                                         <td style={{ padding: '20px 24px', textAlign: 'right' }}>
-                                            <button 
-                                                onClick={() => router.push(`/admin/companies/${company.id}`)}
-                                                style={{ padding: '8px 16px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 700, color: '#475569', cursor: 'pointer' }}
-                                            >
-                                                Manage
-                                            </button>
+                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                                {!company.isVerified && (
+                                                    <button
+                                                        onClick={() => handleQuickApprove(company.id)}
+                                                        style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                                                    >
+                                                        APPROVE
+                                                    </button>
+                                                )}
+                                                {company.email && (
+                                                    <a
+                                                        href={`mailto:${company.email}`}
+                                                        style={{ display: 'inline-flex', padding: '6px', backgroundColor: 'transparent', border: '1px solid #e2e8f0', borderRadius: '6px', color: '#64748b', cursor: 'pointer' }}
+                                                        title={`Email ${company.name}`}
+                                                    >
+                                                        <Mail size={14} />
+                                                    </a>
+                                                )}
+                                                <button 
+                                                    onClick={() => router.push(`/admin/companies/${company.id}`)}
+                                                    style={{ padding: '8px 16px', backgroundColor: '#f1f5f9', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 700, color: '#475569', cursor: 'pointer' }}
+                                                >
+                                                    Manage
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -132,9 +216,9 @@ export default function AdminCompaniesPage() {
                         <div style={{ width: '100px', height: '100px', backgroundColor: '#f8fafc', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
                             <SearchX size={44} color="#cbd5e1" />
                         </div>
-                        <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', margin: '0' }}>No companies registered.</h3>
+                        <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', margin: '0' }}>No companies found.</h3>
                         <p style={{ fontSize: '14px', color: '#64748b', marginTop: '8px', maxWidth: '340px' }}>
-                            Platform partner list is currently empty. Registered companies will appear here for verification and management.
+                            {searchQuery ? "No results match your search query." : "No companies match the selected filter."}
                         </p>
                     </div>
                 )}
