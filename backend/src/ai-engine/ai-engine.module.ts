@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module, forwardRef, Global } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmbeddingService } from './embedding/embedding.service';
 import { VectorSearchService } from './vector-search/vector-search.service';
@@ -18,6 +18,7 @@ import { AiCandidateController } from './ai-candidate.controller';
 import { JobModule } from '../modules/job/job.module';
 import { CvModule } from '../modules/cv/cv.module';
 
+@Global()
 @Module({
     imports: [
         TypeOrmModule.forFeature([
@@ -46,6 +47,7 @@ import { CvModule } from '../modules/cv/cv.module';
         PromptService,
         ScoringService,
         AiLogService,
+        AiControlService,
         AIService,
     ],
 })

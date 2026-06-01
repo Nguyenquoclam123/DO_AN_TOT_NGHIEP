@@ -7,6 +7,7 @@ import { Company } from '../company/entities/company.entity';
 import { Application } from '../application/entities/application.entity';
 import { User } from '../user/entities/user.entity';
 import { SettingService } from '../setting/setting.service';
+import { AiControlService } from '../../ai-engine/ai-control/ai-control.service';
 
 @Injectable()
 export class AdminService {
@@ -22,6 +23,7 @@ export class AdminService {
         @InjectRepository(User)
         private readonly userRepository: Repository<User>,
         private readonly settingService: SettingService,
+        private readonly aiControlService: AiControlService,
     ) { }
 
     async getStats() {
@@ -42,15 +44,17 @@ export class AdminService {
     }
 
     async getAIStats() {
-        const [totalRequests, feedbackApps, activeModel] = await Promise.all([
+        const activeConfig = await this.aiControlService.getActiveConfig();
+        const activeModelName = activeConfig?.model_name || await this.settingService.get('ai_model') || 'gemini-2.5-flash';
+
+        const [totalRequests, feedbackApps] = await Promise.all([
             this.applicationRepository.count(),
             this.applicationRepository.find({
                 where: { aiFeedback: 'INACCURATE' },
                 relations: ['candidate', 'job', 'job.company'],
                 take: 5,
                 order: { createdAt: 'DESC' }
-            }),
-            this.settingService.get('ai_model')
+            })
         ]);
 
         const accuracy = totalRequests > 0 ? ((totalRequests - feedbackApps.length) / totalRequests * 100).toFixed(1) : '100';
@@ -60,7 +64,7 @@ export class AdminService {
             avgAccuracy: accuracy,
             avgLatencyMs: 850,
             tokenUsage: "4.2M / 10M",
-            topModel: activeModel || 'gemini-2.5-flash',
+            topModel: activeModelName,
             anomalies: feedbackApps.map(app => ({
                 id: app.id,
                 candidate: `${app.candidate?.firstName || 'Unknown'} ${app.candidate?.lastName || ''}`,
